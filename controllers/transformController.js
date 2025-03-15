@@ -14,6 +14,52 @@ const openai = new OpenAI({
   apiKey: config.OPENAI_API_KEY
 });
 
+// Função para limpar imagens antigas
+const cleanupOldImages = () => {
+  console.log('🧹 [API] Iniciando limpeza de imagens antigas...');
+  const uploadsDir = path.join(__dirname, '../uploads');
+  
+  // Ler todos os arquivos da pasta uploads
+  fs.readdir(uploadsDir, (err, files) => {
+    if (err) {
+      console.error('❌ [API] Erro ao ler diretório de uploads:', err);
+      return;
+    }
+
+    const now = Date.now();
+    files.forEach(file => {
+      // Ignorar o arquivo .gitkeep
+      if (file === '.gitkeep') return;
+
+      const filePath = path.join(uploadsDir, file);
+      fs.stat(filePath, (err, stats) => {
+        if (err) {
+          console.error(`❌ [API] Erro ao verificar arquivo ${file}:`, err);
+          return;
+        }
+
+        // Remover arquivos com mais de 24 horas
+        const fileAge = now - stats.mtimeMs;
+        if (fileAge > 24 * 60 * 60 * 1000) { // 24 horas em milissegundos
+          fs.unlink(filePath, err => {
+            if (err) {
+              console.error(`❌ [API] Erro ao remover arquivo ${file}:`, err);
+            } else {
+              console.log(`🗑️ [API] Arquivo antigo removido: ${file}`);
+            }
+          });
+        }
+      });
+    });
+  });
+};
+
+// Executar limpeza a cada 6 horas
+setInterval(cleanupOldImages, 6 * 60 * 60 * 1000);
+
+// Executar uma limpeza inicial quando o servidor iniciar
+cleanupOldImages();
+
 // Função para transformar uma imagem em cartoon
 exports.transformImage = (req, res) => {
   // Verificar se a imagem foi enviada
@@ -203,6 +249,14 @@ exports.getCartoonImage = async (req, res) => {
       fs.writeFileSync(cartoonImagePath, cartoonBuffer);
       
       console.log(`✅ [API] Imagem cartoon gerada e salva com sucesso!`);
+      
+      // Remover a imagem original após gerar o cartoon
+      try {
+        fs.unlinkSync(originalImagePath);
+        console.log(`🗑️ [API] Imagem original removida com sucesso!`);
+      } catch (deleteError) {
+        console.error(`⚠️ [API] Aviso: Não foi possível remover a imagem original:`, deleteError);
+      }
       
       // Retornar a imagem em base64
       return res.json({
